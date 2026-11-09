@@ -1,5 +1,7 @@
 # jsonapi - Manual Penggunaan
 
+Bagian dari ekosistem [GoCroot](https://gocroot.if.co.id/). Dipakai oleh [GoCroot Core](https://github.com/gocroot/core).
+
 ## Pendahuluan
 `jsonapi` adalah paket Go yang menyediakan fungsi untuk melakukan HTTP request dengan JSON payload dan autentikasi menggunakan token. Paket ini mendukung metode GET dan POST dengan opsi untuk menambahkan token otorisasi.
 
