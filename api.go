@@ -4,104 +4,94 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
+// Client dipakai semua fungsi di package ini. Satu client bersama memakai ulang koneksi
+// (keep-alive), dan Timeout mencegah request menggantung. Boleh diganti sesuai kebutuhan.
+var Client = &http.Client{Timeout: 30 * time.Second}
+
+// MaxResponseBytes membatasi ukuran body respons yang dibaca (10 MiB).
+var MaxResponseBytes int64 = 10 << 20
+
 func PostStructWithToken[T any](tokenkey string, tokenvalue string, structname interface{}, urltarget string) (statusCode int, result T, err error) {
-	client := http.Client{}
-	mJson, _ := json.Marshal(structname)
-	req, err := http.NewRequest("POST", urltarget, bytes.NewBuffer(mJson))
+	mJson, err := json.Marshal(structname)
 	if err != nil {
 		return
 	}
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add(tokenkey, tokenvalue)
-	resp, err := client.Do(req)
+	req, err := http.NewRequest(http.MethodPost, urltarget, bytes.NewReader(mJson))
 	if err != nil {
 		return
 	}
-	statusCode = resp.StatusCode
-	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if err = json.Unmarshal(respBody, &result); err != nil {
-		rawstring := string(respBody)
-		err = errors.New("Not A Valid JSON Response from " + urltarget + " . CONTENT: " + rawstring)
-		return
-	}
-	return
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(tokenkey, tokenvalue)
+	return do[T](req, false)
 }
 
 func Get[T any](urltarget string) (statusCode int, result T, err error) {
-	resp, err := http.Get(urltarget)
+	req, err := http.NewRequest(http.MethodGet, urltarget, nil)
 	if err != nil {
 		return
 	}
-	statusCode = resp.StatusCode
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if er := json.Unmarshal(body, &result); er != nil {
-		rawstring := string(body)
-		err = errors.New("Not A Valid JSON Response from " + urltarget + " . CONTENT: " + rawstring)
-		return
-	}
-	return
+	return do[T](req, false)
 }
 
 func GetWithBearer[T any](tokenbearer string, urltarget string) (statusCode int, result T, err error) {
-	client := http.Client{}
-	req, err := http.NewRequest("GET", urltarget, nil)
+	req, err := http.NewRequest(http.MethodGet, urltarget, nil)
 	if err != nil {
 		return
 	}
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Bearer "+tokenbearer)
-	resp, err := client.Do(req)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenbearer)
+	return do[T](req, true)
+}
+
+func GetStructWithToken[T any](tokenkey string, tokenvalue string, urltarget string) (statusCode int, result T, err error) {
+	req, err := http.NewRequest(http.MethodGet, urltarget, nil)
 	if err != nil {
 		return
 	}
-	statusCode = resp.StatusCode
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(tokenkey, tokenvalue)
+	return do[T](req, false)
+}
+
+// do mengirim request, membaca body dengan batas ukuran, lalu mendekode JSON ke T.
+// withCause menyertakan pesan error json di depan (perilaku lama GetWithBearer).
+func do[T any](req *http.Request, withCause bool) (statusCode int, result T, err error) {
+	resp, err := Client.Do(req)
+	if err != nil {
+		return
+	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
+	statusCode = resp.StatusCode
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
 	if err != nil {
 		return
 	}
-	if err = json.Unmarshal(respBody, &result); err != nil {
-		rawstring := string(respBody)
-		err = errors.New(err.Error() + " | Not A Valid JSON Response from " + urltarget + " . CONTENT: " + rawstring)
+	if int64(len(body)) > MaxResponseBytes {
+		err = fmt.Errorf("response from %s exceeds %d bytes", req.URL.Redacted(), MaxResponseBytes)
+		return
+	}
+	if jerr := json.Unmarshal(body, &result); jerr != nil {
+		msg := "Not A Valid JSON Response from " + req.URL.Redacted() + " . CONTENT: " + snippet(body)
+		if withCause {
+			msg = jerr.Error() + " | " + msg
+		}
+		err = errors.New(msg)
 		return
 	}
 	return
 }
 
-func GetStructWithToken[T any](tokenkey string, tokenvalue string, urltarget string) (statusCode int, result T, err error) {
-	client := http.Client{}
-	req, err := http.NewRequest("GET", urltarget, nil)
-	if err != nil {
-		return
+// snippet memotong body untuk pesan error supaya log tidak membengkak.
+func snippet(b []byte) string {
+	const max = 512
+	if len(b) > max {
+		return string(b[:max]) + "...(truncated)"
 	}
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add(tokenkey, tokenvalue)
-	resp, err := client.Do(req)
-	if err != nil {
-		return
-	}
-	statusCode = resp.StatusCode
-	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if err = json.Unmarshal(respBody, &result); err != nil {
-		rawstring := string(respBody)
-		err = errors.New("Not A Valid JSON Response from " + urltarget + " . CONTENT: " + rawstring)
-		return
-	}
-	return
+	return string(b)
 }

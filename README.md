@@ -68,16 +68,22 @@ status, result, err := jsonapi.GetStructWithToken("X-API-KEY", "myapikey", "http
 ```
 
 ## Error Handling
-Jika response bukan JSON yang valid, fungsi akan mengembalikan error dengan informasi tambahan tentang konten yang diterima.
+Jika response bukan JSON yang valid, fungsi akan mengembalikan error dengan potongan konten yang diterima (maksimal 512 byte). Password di URL disamarkan.
+
+## Keamanan & Performa
+- Semua fungsi memakai satu `jsonapi.Client` bersama (keep-alive) dengan timeout 30 detik. Bisa diganti: `jsonapi.Client = &http.Client{Timeout: 10 * time.Second}`.
+- Body respons dibatasi `jsonapi.MaxResponseBytes` (default 10 MiB). Respons yang lebih besar ditolak dengan error.
+- Error dari `json.Marshal` pada `PostStructWithToken` dikembalikan, tidak lagi mengirim body kosong.
 
 ## Lisensi
 Paket ini tersedia dengan lisensi open-source. Silakan gunakan sesuai kebutuhan Anda.
 
 ## Release Version
+
+Rilis dibuat **otomatis** oleh workflow *Auto Tag & Release* setiap ada push ke `main` yang mengubah kode Go, `go.mod`, atau `go.sum`. Jangan membuat tag manual. Kenaikan versi mengikuti pesan commit: `fix:` → patch, `feat:` → minor, dan `[skip release]` untuk melewati rilis. Rilis manual bisa lewat tab Actions → *Run workflow*.
+
 ```sh
-go get -u all
+go get -u ./...
 go mod tidy
-git tag v0.0.1
-git push origin --tags
-go list -m github.com/gocroot/jsonapi@v0.0.1
+go list -m -versions github.com/gocroot/jsonapi
 ```
